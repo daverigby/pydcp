@@ -2,6 +2,7 @@ import random
 from mc_bin_client import MemcachedClient
 from memcacheConstants import *
 import Queue
+import socket
 import time
 
 MAX_SEQNO = 0xFFFFFFFFFFFFFFFF
@@ -11,8 +12,8 @@ class DcpClient(MemcachedClient):
     """ DcpClient implements dcp protocol using mc_bin_client as base
         for sending and receiving commands """
 
-    def __init__(self, host='127.0.0.1', port=11210, timeout=30):
-        super(DcpClient, self).__init__(host, port, timeout)
+    def __init__(self, host='127.0.0.1', port=11210, timeout=30, **kwargs):
+        super(DcpClient, self).__init__(host, port, timeout, **kwargs)
 
         # recv timeout
         self.timeout = timeout
@@ -213,6 +214,15 @@ class DcpClient(MemcachedClient):
                     # stream_req ops received during add_stream request
                     self.ack_stream_req(opaque)
 
+                elif opcode == CMD_DCP_NOOP:
+                    response = op.formated_response(opcode, keylen,
+                                                    extlen, dtype, status,
+                                                    cas, body, opaque)
+                    return response
+
+                else:
+                    print "UNHANDLED OPCODE:", hex(opcode)
+
             except Exception as ex:
                 print ex
                 if 'died' in str(ex):
@@ -230,6 +240,15 @@ class DcpClient(MemcachedClient):
                              0, 0, 0, 0,
                              len(body), opaque, 0)
         self.s.send(header + body)
+
+
+    def ack_noop(self, opaque):
+        header = struct.pack(REQ_PKT_FMT,
+                             RES_MAGIC_BYTE,
+                             CMD_DCP_NOOP,
+                             0, 0, 0, 0,
+                             0, opaque, 0)
+        self.s.send(header)
 
 
 class DcpStream(object):
@@ -578,6 +597,7 @@ class StreamRequest(Operation):
         else:
             response = { 'err_msg' : "(Stream Request) Unknown response",
                          'opcode'  :  opcode,
+                         'opaque'  : opaque,
                          'status'  : -1 }
 
         return response
